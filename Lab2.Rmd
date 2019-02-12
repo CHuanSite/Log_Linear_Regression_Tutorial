@@ -125,12 +125,17 @@ myMatrix <- cbind(PctCover,logForestAge,logSalamanders)
 myGlm1 <- glm(Salamanders ~ PctCover + logForestAge + PctCover:logForestAge,
               family=poisson)
 summary(myGlm1) # Backward elimination...
+sum(residuals(myGlm1, "pearson") ^ 2) / 43
 
 myGlm2 <- update(myGlm1, ~ . - PctCover:logForestAge)
 summary(myGlm2)
+sum(residuals(myGlm2, "pearson") ^ 2) / 44
 
 myGlm3 <- update(myGlm2, ~ . - logForestAge)
 summary(myGlm3) # PctCover is the only explanatory variable remaining
+sum(residuals(myGlm3, "pearson") ^ 2) / 45
+
+
 ```
 
 ## Checking for Overdispersion
@@ -171,6 +176,7 @@ reduced <- glm(Salamanders ~ (PctCover + I(PctCover^2)) * closed, family = quasi
 
 ```{r}
 summary(reduced)
+sum(residuals(reduced, "pearson") ^ 2) / 41
 ```
 
 
@@ -178,6 +184,8 @@ summary(reduced)
 ```{r}
 # Baseline categorical logit model
 Alligators <- read.table("data.txt",header = T)
+
+Alligators
 
 # y1-y5: fish, invertebrate,..., Other
 # Use y1=fish as baseline category
