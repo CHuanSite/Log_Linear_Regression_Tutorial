@@ -1,0 +1,209 @@
+---
+title: "Lab2"
+author: "HuanChen"
+date: "2019/2/10"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+- Poisson Log Linear Regression
+- Overdispersion
+- Multinomial Regression
+
+```{r, message = FALSE, warning = FALSE}
+library(Sleuth3)
+library(tidyverse)
+library(ggplot2)
+library(VGAM)
+library(car)
+```
+
+
+# Poisson Log Linear Regression
+
+## Canonical Link for Poisson Distribution
+- $\theta = X\beta = \eta = g(\mu) = g(b'(\theta)) = g(exp(\theta))$
+- $g(t) = \log(t)$
+
+
+## Loading the Data
+Although male elephants are capable of reproducing by 14 to 17 years of age, your adult males are usually unsuccessful in competing with their larger elders for the attention of receptive females. Since male elephants continue to grow throughout their lifetimes, and since larger males tend to be more successful at mating, the males most likely to pass their genes to future generations are those whose characteristics enable them to live long lives. Joyce Poole studied a population of African elephants in Amboseli National Park, Kenya, for 8 years. This data frame contains the number of successful matings and ages (at the study's beginning) of 41 male elephants.
+```{r}
+attach(case2201)
+case2201
+case2201 %>% dim
+```
+
+## EDA
+```{r}
+# check the fitted line with log linear regression
+case2201 %>% ggplot(aes(x = Age, y = Matings)) + 
+    geom_point(position = "jitter") + 
+    geom_smooth(method = "glm", method.args = list(family = "poisson"))
+
+# check the linearity on log scale
+case2201 %>% ggplot(aes(x = Age, y = log(Matings + 0.5))) + 
+    geom_point(position = "jitter") + 
+    geom_smooth(method = "lm")
+```
+
+## Model Fitting
+```{r}
+myGlm1 <- glm(Matings ~ Age, family=poisson)
+summary(myGlm1)
+```
+
+## Model Interpretation
+```{r}
+beta <- myGlm1$coef
+# change in mean of Matings when increasing age by 10 years
+exp(beta[2] * 10)
+# 95% confidence interval
+exp(confint(myGlm1,2) * 10)  
+```
+
+## Residuals
+Standard residuals:
+$$ r_i = Y_i - \hat{Y}_i = Y_i - \hat{\lambda}_i$$
+Pearson residuals:
+$$r_i = \frac{Y_i - E(Y_i|X)}{\sqrt{Var(Y_i|X)}} = \frac{Y_i - \hat{\lambda}_i}{\sqrt{\hat{\lambda}_i}} $$
+Deviance Residuals:
+$$d_i = sign(y_i-\lambda_i)\sqrt{2(y_i\log(y_i/\hat{\lambda}_i)-(y_i-\hat{\lambda_i}))} $$
+Deviance can be interpreted as the difference between your model's fit and the fit of an ideal model 
+$$D = \sum_{i}^n d_i^2$$
+
+
+- Deviance Residual and Pearson Residuals, when are they close?
+- When Poisson mean is large, both residuals are approximately standard normal
+- Otherwise, cannot check against standard normal
+
+```{r}
+# deviance residual
+residuals(myGlm1) %>% head
+
+# Pearson residual
+residuals(myGlm1, type = "pearson") %>% head
+
+# check deviance residual plot
+plot(myGlm1, which = 1)
+
+# compare
+par(mfrow = c(1, 2))
+plot(fitted(myGlm1), residuals(myGlm1, type = "pearson"), main = "Pearson", ylim = c(-3, 2.5))
+abline(h = 2, col = "red")
+abline(h = -2, col = "red")
+plot(fitted(myGlm1), residuals(myGlm1), main = "Deviance", ylim = c(-3, 2.5))
+abline(h = 2, col = "red")
+abline(h = -2, col = "red")
+par(mfrow = c(1, 1))
+```
+
+```{r}
+detach(case2201)
+```
+
+# Overdispersion
+
+## Loading the Data
+The Del Norte Salamander (plethodon elongates) is a small (5--7 cm) salamander found among rock rubble, rock outcrops and moss-covered talus in a narrow range of northwest California. To study the habitat characteristics of the species and particularly the tendency of these salamanders to reside in dwindling old-growth forests, researchers selected 47 sites from plausible salamander habitat in national forest and parkland. Randomly chosen grid points were searched for the presence of a site with suitable rocky habitat. At each suitable site, a 7 metre by 7 metre search are was examined for the number of salamanders it contained. This data frame contains the counts of salamanders at the sites, along with the percentage of forest canopy and age of the forest in years.
+```{r}
+attach(case2202)
+case2202
+case2202 %>% dim
+```
+
+```{r}
+logSalamanders <- log(Salamanders + .5)
+logForestAge <- log(ForestAge + .5)
+myMatrix <- cbind(PctCover,logForestAge,logSalamanders)
+```
+
+```{r}
+myGlm1 <- glm(Salamanders ~ PctCover + logForestAge + PctCover:logForestAge,
+              family=poisson)
+summary(myGlm1) # Backward elimination...
+
+myGlm2 <- update(myGlm1, ~ . - PctCover:logForestAge)
+summary(myGlm2)
+
+myGlm3 <- update(myGlm2, ~ . - logForestAge)
+summary(myGlm3) # PctCover is the only explanatory variable remaining
+```
+
+## Checking for Overdispersion
+- Possible Causes
+- Compare sample variance and sample averages with identical covariates (grouping)
+- Deviance goodness-of-fit test after fitting a rich model (see below)
+- Check outliers via residuals
+
+## Inference with Overdispersion
+```{r}
+# fit a rich model
+closed <- (PctCover > 70)
+fit <- glm(Salamanders ~ (PctCover * ForestAge + I(PctCover^2) +
+I(ForestAge^2)) * closed, family = poisson)
+summary(fit)
+
+1 - pchisq(deviance(fit), df.residual(fit))
+
+# check for extreme outliers
+plot(fitted(fit), residuals(fit))
+abline(h = 0)
+abline(h = 2, lty = 2, col = "red")
+abline(h = -2, lty = 2, col = "red")
+title("Residual plot from Poisson Regression")
+```
+
+```{r}
+# not a sign of overdispersion; consider extra-Poisson variation
+```
+
+```{r}
+# here we drop ForestAge with Quisi-lkd method that handles overdispersion
+full <- glm(Salamanders ~ (PctCover * ForestAge + I(PctCover^2) + I(ForestAge^2)) * closed, family = quasipoisson)
+reduced <- glm(Salamanders ~ (PctCover + I(PctCover^2)) * closed, family = quasipoisson)
+1 - pchisq(deviance(reduced) - deviance(full), df.residual(reduced) -
+               df.residual(full))
+```
+
+```{r}
+summary(reduced)
+```
+
+
+# Multinomial Regression 
+```{r}
+# Baseline categorical logit model
+Alligators <- read.table("data.txt",header = T)
+
+# y1-y5: fish, invertebrate,..., Other
+# Use y1=fish as baseline category
+
+fit <- vglm(formula = cbind(y2,y3,y4,y5,y1) ~ size + factor(lake),
+            family=multinomial, data=Alligators) 
+# fish=1 is baseline category
+
+summary(fit)
+
+# residual deviance - goodness of fit
+deviance(fit)
+
+1-pchisq(deviance(fit),df=12)
+
+# The data are a bit sparse, but the deviance of 17.08 (df = 12) 
+# does not give much evidence against the main-effects model. 
+# The df value re ects that we have modeled 32 multinomial probabilities 
+# (4 at each combination of size and lake) using 20 parameters (5 for each logit). 
+# The more complex model allowing interaction between size and lake has 12 more parameters 
+# and is the saturated model. Removing size or lake from the main-effects model results 
+# in a signi cantly poorer  t: the deviance increases by 21.09 (df = 4) in removing size 
+# and 49.13 (df = 12) in removing lake.
+
+fitted(fit)
+
+```
+
+
